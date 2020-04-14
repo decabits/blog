@@ -6,8 +6,10 @@
 <body>
 	<main class="container">
 		<section class="about">
-			<img src="{{ "/assets/images/Decabitslogo.png" | relative_url }}" alt="{{ site.plainwhite.name }}">
-			<h2>{{ site.plainwhite.name }}</h2>
+			<a href="https://decabits.com" style="text-align: center">
+				<img src="{{ "/assets/images/Decabitslogo.png" | relative_url }}" alt="{{ site.plainwhite.name }}">
+				<h2>{{ site.plainwhite.name }}</h2>
+			</a>
 			<p class="tagline">{{ site.plainwhite.tagline }}</p>
 			<ul class="social">
                 {%- if site.plainwhite.social_links.github -%}
