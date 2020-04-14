@@ -1,10 +1,9 @@
-title: Your awesome title
-author: GitHub User
-email: your-email@domain.com
+title: Decabits Engineering Blog
+author: sahilbathla
+email: info@decabits.com
 description: > # this means to ignore newlines until "show_exerpts:"
-  Write an awesome description for your new site here. You can edit this
-  line in _config.yml. It will appear in your document head meta (for
-  Google search results) and in your feed.xml site description.
+  The engineering blog by technical team at Decabits Software on web and mobile development.
+  Get tips on latest technology like Ruby, Rails, React, React Native, Node, Serverless, Go, Angular etc.
 show_excerpts: true # set to true to show excerpts on the homepage
 
 # Minima date format
