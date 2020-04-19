@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  Making an Azure Active Directory Multitenant OAuth Application
-date:   2019-03-27 09:57:36 +0530
+date:   2020-03-27 09:57:36 +0530
 categories: OAuth Azure Microsoft Active Directory
 ---
 
