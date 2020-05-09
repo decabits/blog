@@ -14,7 +14,7 @@ layout: default
     <h1 id="posts-label">posts</h1>
   </li>
 
-  {% assign latest_posts = site.posts | reverse %}
+  {% assign latest_posts = site.posts %}
   {%- for post in latest_posts -%}
   <li>
     {%- assign date_format = site.plainwhite.date_format | default: "%b %-d, %Y" -%}
