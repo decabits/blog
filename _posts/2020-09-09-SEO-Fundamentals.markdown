@@ -4,15 +4,19 @@ title:  "SEO Fundamentals"
 date:   2020-09-09 13:01:30 +0530
 categories: Digital Marketing
 ---
-<body style="background-color:rgb(243, 217, 217);">
-</body>
+<style>
+img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
 <img src="/assets/images/seo.jpg" height="500px" width="500px" alt="There was supposed to be an image here">
 <br>
 If you have landed on this webpage, you are at the right place! This is the first of a series of blogs (accessible at <a href="http://www.decabits.com">decabits</a>) designed to give you an insight into search engine optimization and digital marketing. Today’s blog features the definition of SEO, its types and gives a brief introduction to on-page optimization.In order to understand the key concepts of SEO better, we first need to understand what SEO exactly is.
 
 <h2>What is SEO?</h2>
 SEO or search engine optimization is the process of generating traffic for a website from search results on a search engine. These results are organic, or unpaid. The efficiency of SEO is not solely dependent upon the quantity of traffic, it is greatly dependent upon the quality of traffic as well. It is primarily categorized, as below.
-
 <h2>SEO Types</h2>
 
 <h3>On-Page SEO</h3>
