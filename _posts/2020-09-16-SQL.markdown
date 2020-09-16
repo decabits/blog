@@ -1,0 +1,766 @@
+---
+layout: post
+title:  "SQL Fundamentals"
+date:   2020-09-16 16:28:30 +0530
+categories: SQL 
+---
+The very difference between a good programmer and a great programmer can be seen through a simple programming fundamental: ‘DRY’. The ‘Don't Repeat Yourself’ principle usually means to not write a piece of code more than once and to use it everywhere. That said, why not consider this principle in a more abstract way? Let’s sit back and think for a moment. Do we really need to reinvent CRUD interfaces on the backend side for each new service rather than focusing on the functionality which provides the real business value?
+
+Implementing and keeping these CRUD interfaces up to date is a boring and tedious task. It shouldn’t consume developer’s efforts every time the underlying database schema changes. Rails and Rails-like frameworks have already automated this task to a great extent by providing developers with generators, but do not prove to be very helpful in case of schema modification.
+
+In this blog, I will talk about how Postgraphile can help to eliminate the repetitive task of creating and maintaining CRUD API on backend for each new service. This will automate the entire process. 
+
+Since the backend code for manipulating the data does not provide the core business benefit, the implementation needs to be automated to manipulate the data. Postgraphile allows us to do just that: it provides a GraphQL HTTP API for that database, given a PostgreSQL database and supports authentication, authorization and extensibility.
+
+Before we dive deeper into these through an example, let us first briefly go through the tech stack we are going to use. This will allow us to understand the reasons behind using these tools.
+
+
+PostgreSQL: The World's Most Advanced Open Source Relational Database
+Let’s put it into perspective: PostgreSQL is a great database. For most use cases you should choose strong consistency and relations whenever possible. And this is what PostgreSQL provides us.
+Postgres have authorization, user roles , row and column-level security policies to regulate access control for underlying schema at database level and identify which user is currently logged in and what data they should see.
+GraphQL: A Query Language For Your API
+
+In a nutshell, GraphQL is a specification/syntax that describes how to ask for data, and is generally used to load data from a server to a client. GraphQL has three main characteristics:
+It lets the client specify exactly what data it needs.
+It makes aggregation of data from multiple sources easier.
+It uses a type system to describe data.
+With GraphQL, the user may make a single call to get the necessary information instead of making multiple REST calls to get the same.
+Postgraphile: Extensible High-Performance Automatic GraphQL API for PostgreSQL
+PostGraphile does a great job at pairing these two technologies to allow developers to quickly put together a full-featured GraphQL server storing data on a PostgreSQL database. PostGraphile harnesses Database Driven Development to generate and update your GraphQL server from your Postgres database schema, automatically detecting changes you make to your schema and updating your server accordingly.
+
+In their own words:
+PostgreSQL already has amazing authorization and relationship infrastructure, why duplicate that logic in a custom API?
+PostGraphile manages the development of a GraphQL API layer that is performant and consistent with standards.This also significantly cuts down on development time.
+Our main goal is to reduce the work needed to execute boring CRUD operations. Postgraphile goes one step further and completely automates the functionality's development and maintenance.
+Example: An API For Peer Feedback System
+
+Let’s build an interesting app for giving feedback and rating to your colleagues.
+We'll use React Starter Kit boilerplate as a barebone for getting started. In our app, we’ll have users that can rate and provide feedback to their peers, sign in, and an admin that can register and assign peers and view the ratings. The database schema is going to look like this: we have three tables: namely users, user_peers and ratings.
+
+Entity relationship diagram for tables - 
+
+The given SQL code creates the schema for us:
+
+
+
+CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;
+CREATE EXTENSION pgcrypto;
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name text NOT NULL,
+    email text NOT NULL UNIQUE,
+    password text NOT NULL,
+    user_type text NOT NULL
+);
+
+CREATE TABLE user_peers (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    peer_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT user_peer UNIQUE(user_id,peer_id)
+);
+
+CREATE TABLE ratings (
+    id SERIAL PRIMARY KEY,
+    user_peer_id INTEGER NOT NULL REFERENCES user_peers (id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating > 0 AND rating < 11),
+    feedback text,
+    month INTEGER NOT NULL CHECK (month > 0 AND month < 13),
+    year INTEGER NOT NULL,
+    CONSTRAINT user_peer_rating UNIQUE(user_peer_id, month, year)
+);
+
+
+
+
+    Now let us install postgraphile and register it with our express app as a middleware.
+
+npm install -g postgraphile
+
+
+
+
+
+
+const { postgraphile } = require("postgraphile");
+
+app.use(
+  postgraphile("PostgreSQL:///peerRating",
+    "public",
+    {
+      watchPg: true,
+      graphiql: true,
+      enhanceGraphiql: true,
+      dynamicJson: true,
+      exportJsonSchemaPath: '../example.js',
+      showErrorStack: true,
+    }
+  )
+);
+
+
+
+
+
+
+That's all! Let’s use  the provided GraphQL interface as a playground. On the right hand side, you can find the documentation explorer and see all supported queries and mutations. We can already start querying and modifying the database, but let us first seed the database with some values:
+Prior to seeding our data, let’s understand how our app is going to behave for different types of users. We’re going to have three types of users: admin, employee and anonymous and these would have their respective access control policies.
+- Admin can do all sorts of CRUD operations on all the tables.
+-Employees can sign in, view and give ratings to their peers.
+-Anonymous can not access any data and can only sign in.
+To enforce these restrictions, we need to restrict the corresponding CRUD operations for the roles on the respectives tables by executing the security policies on the tables (let’s see later).
+Now let’s define PostgreSQL roles so that later we can grant permissions and restrictions on these roles through ‘grant’.
+CREATE ROLE anonymous;
+CREATE ROLE employee;
+CREATE ROLE admin;
+Note: After you create a PostgreSQL role, you’ll explicitly need to grant read and write permission to these roles for various tables, unless you do so no tables would be accessible by that role in PostgreSQL.
+I think at this point we’re good to seed some data and see the GraphQL endpoint in action, so let’s do that using this SQL code:
+BEGIN;
+INSERT INTO users (id, name, email, password, user_type) VALUES
+    (1, 'Shubham', 'shubham@decabits.com', '1234567', 'employee'),
+    (2, 'Sahil', 'sahil@decabits.com', 'abcdefg', 'admin'),
+    (3, 'harnoor', 'harnoor@decabits.com', 'aswe345', 'employee');
+ALTER SEQUENCE users_id_seq START WITH 4;
+
+INSERT INTO user_peers (id, user_id, peer_id) VALUES
+    (1, 1, 2),
+    (2, 2, 1),
+    (3, 1, 3),
+    (4, 3, 1);
+
+ALTER SEQUENCE user_peers_id_seq START WITH 5;
+
+INSERT INTO ratings (id, user_peer_id, rating, feedback, month, year) VALUES
+    (1, 1, 8, 'Coolest Boss ever, if you just ignore the PJs', 4, 2019),
+    (2, 2, 7, 'Code aggressively , just ignore his temper', 5, 2019),
+    (3, 3, 9, 'Nicest Hr ever, just ignore all the falling and loud laugh', 8, 2019),
+
+COMMIT;
+And this is what our first query looks like:
+Query: 
+
+query {
+  allUsers {
+    edges {
+      node {
+        id
+        email
+        name
+        password
+        userType
+      }
+    }
+  }
+}
+
+
+Response:
+
+{
+  "data": {
+    "allUsers": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "email": "shubham@decabits.com",
+            "name": "Shubham",
+            "password": "1234567",
+            "userType": "employee"
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "email": "sahil@decabits.com",
+            "name": "Sahil",
+            "password": "abcdefg",
+            "userType": "admin"
+          }
+        },
+        {
+          "node": {
+            "id": 3,
+            "email": "harnoor@decabits.com",
+            "name": "harnoor",
+            "password": "aswe345",
+            "userType": "employee"
+          }
+        }
+      ]
+    }
+  }
+}
+Hmm! This looks great but there's something wrong here and I think it’s quite transparent. We don’t want the API to return the password, in fact we don't even want this data to be open. It should only be visible to the admin. The employee should only see their peers’ profiles and not everyone’s .That’s fine for now, let’s take care of this a little later:
+Let’s query our ratings table:
+Query:
+
+query MyQuery {
+  allRatings {
+    edges {
+      node {
+        id
+        feedback
+        month
+        rating
+        year
+      }
+    }
+  }
+}
+
+Response:
+
+{
+  "data": {
+    "allRatings": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "feedback": "Coolest Boss ever, if you just ignore the PJs",
+            "month": 4,
+            "rating": 8,
+            "year": 2019
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "feedback": "Code aggressively , just ignore his temper",
+            "month": 5,
+            "rating": 7,
+            "year": 2019
+          }
+        },
+        {
+          "node": {
+            "id": 3,
+            "feedback": "Nicest Hr ever, just ignore all the falling and loud laugh",
+            "month": 8,
+            "rating": 9,
+            "year": 2019
+          }
+        }
+      ]
+    }
+  }
+}
+Here, we encounter another issue: users should not be able to see ratings of other users.
+We've seen a couple of problems with our current approach which we need to fix:
+Give admin a way to create a new account.
+Give all users a way to sign in.
+Allow everyone to see only their peers in the users table.
+Anonymous are only allowed to sign in.
+Employees could only give ratings/feedback for their peers.
+Admin can only view the ratings/feedback given to employees/admin.
+User and Session Management with Postgraphile:
+
+Postgraphile supports a standard way of handling sessions: JWT (JSON Web Tokens). We can provide Postgraphile with a secret key and a custom PostgreSQL data type. Each time a PostgreSQL function returns this data type, Postgraphile encodes and signs the information as a JWT token. Whenever a request has a valid authorization header signed with the secret key specified, Postgraphile extracts that data and stores it in PostgreSQL variables. We can then access that data in our PostgreSQL queries.
+
+
+To see this in practice, let us define a data type for our token and then a sign up and sign in function:
+
+CREATE TYPE jwt_token AS (
+	role TEXT,
+	user_id INTEGER,
+	name TEXT
+);
+
+First we define a new PostgreSQL type, namely jwt_token consisting of a role, a user ID and the name. The role field is for setting the PostgreSQL role of the current user.
+ 
+Next, we define two PLPGSQL functions: SIGNUP and SIGNIN. These functions return the jwt_token type and the result will be translated by Postgraphile into a JWT token.
+ 
+CREATE FUNCTION SIGNUP(username TEXT, email TEXT, password TEXT, user_type TEXT) RETURNS jwt_token AS
+	$$
+	DECLARE
+	-- variable to store the token information
+	token_information jwt_token;
+	BEGIN
+	-- do not store the raw password! Use postgres' crypt function
+	INSERT INTO users (name, email, password, user_type) VALUES ($1, $2, crypt($3, gen_salt('bf', 8)), $4);
+	-- no select the currently inserted user.
+	-- 'medium_user' is the (postgresql) role of the current user
+	SELECT users.user_type, id, name
+	INTO token_information
+	FROM users
+	WHERE users.email = $2;
+	RETURN token_information::jwt_token;
+	END;
+	-- This was a PLPGSQL function which mutates the database (VOLATILE) and
+	-- should be executed with the rights of the definer (the current user)
+	$$ LANGUAGE PLPGSQL VOLATILE STRICT SECURITY DEFINER;
+
+      -- no other user should be able to access this instead of admin
+	REVOKE EXECUTE ON FUNCTION public.SIGNUP FROM PUBLIC;
+      -- only admin should be have rights to access this function
+	GRANT EXECUTE ON FUNCTION SIGNUP(username TEXT, email TEXT, password TEXT, user_type TEXT) TO admin;
+
+	-- similar to above
+	CREATE FUNCTION SIGNIN(email TEXT, password TEXT) RETURNS jwt_token AS
+	$$
+	DECLARE
+	token_information jwt_token;
+	BEGIN
+	SELECT user_type, id, name
+	INTO token_information
+	FROM users
+	WHERE users.email = $1
+	AND users.password = crypt($2, users.password);
+	RETURN token_information::jwt_token;
+	end;
+	$$ LANGUAGE PLPGSQL VOLATILE STRICT SECURITY DEFINER;
+     -- all the user roles should have right to access this function
+	GRANT EXECUTE ON FUNCTION SIGNIN(email TEXT, password TEXT) TO anonymous;
+	GRANT EXECUTE ON FUNCTION SIGNIN(email TEXT, password TEXT) TO employee;
+	GRANT EXECUTE ON FUNCTION SIGNIN(email TEXT, password TEXT) TO admin;
+ 
+Now we need to configure Postgraphile with  a secret key and the name of the token type:
+ 
+app.use(
+  postgraphile("PostgreSQL:///peerRating",
+    "public",
+    {
+      watchPg: true,
+      graphiql: true,
+      enhanceGraphiql: true,
+      dynamicJson: true,
+      jwtPgTypeIdentifier: 'public.jwt_token',
+      jwtSecret: 'ABHD4537BS',
+      pgDefaultRole: 'anonymous',
+      exportJsonSchemaPath: '../example.js',
+      showErrorStack: true,
+    }
+  )
+);
+Now we can use the signup mutation to create a new user:
+Mutation:
+
+mutation {
+  signup(input: {username: "Foo", email: "foo@example.com", password: "123456"}) {
+    jwtToken
+  }
+}
+
+Response:
+
+{
+  "data": {
+    "signup": {
+      "jwtToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibWVkaXVtX3VzZXIiLCJ1c2VyX2lkIjoxOCwibmFtZSI6IkZvbyIsImlhdCI6MTUyMjc4Njg2MCwiZXhwIjoxNTIyODczMjYwLCJhdWQiOiJwb3N0Z3JhcGhpbGUiLCJpc3MiOiJwb3N0Z3JhcGhpbGUifQ.c-10XNZM_XqbJG6Q-p_Jbkc3yWcIZRuNPKhAsw5_Byk"
+    }
+  }
+}
+ 
+When we now try to query anything else, we get permission errors, because we defined the default role to anonymous but did not grant anonymous anything. 
+
+That’s all ,these statements are enough to let postgres restrict the access control as per our use case at table level(we’ll see later on in this post how to refine the access control at row and column level based on user ids).
+Now , we have a way to restrict access to db tables based on roles and a way to specify roles(via JWT ) to postgres. Let’s see the entire flow in action.
+First let’s set the default role to admin to access the signup function and register 2 user corresponding to admin and employee role.
+
+
+Mutation 
+
+mutation {
+  signup(input: {username: "shubham117", email: "shubhamgupta11727@gmail.com", password: "1234567", userType: "admin"}) {
+    clientMutationId
+    jwtToken
+  }
+}
+
+
+
+Response
+
+{
+  "data": {
+    "__typename": "Mutation",
+    "signup": {
+      "clientMutationId": null,
+      "jwtToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4iLCJ1c2VyX2lkIjo2LCJuYW1lIjoic2h1YmhhbTExNyIsImlhdCI6MTU5MDI5MzY3OSwiZXhwIjoxNTkwMzgwMDc5LCJhdWQiOiJwb3N0Z3JhcGhpbGUiLCJpc3MiOiJwb3N0Z3JhcGhpbGUifQ.jcDhsO_8Br8qxCoP8VvyVKtXrYO_ugw0w8QyQwZfWw4"
+    }
+  }
+}
+ 
+Great , we have a admin in our system now, we can use/set this JWT to have all the admin privileges. Let’s do that.
+Lets Query each table one by one with and without this token. Also set the default role back to anonymous in your postgraphie config.
+
+
+Query 
+
+{
+  allUsers {
+    edges {
+      node {
+        id
+        email
+        name
+        password
+        userType
+      }
+    }
+  }
+}
+
+Response:
+
+{
+  "errors": [
+    {
+      "message": "permission denied for table users",
+      "locations": [
+        {
+          "line": 2,
+          "column": 3
+        }
+      ],
+      "path": [
+        "allUsers"
+      ],
+      "stack": "error: permission denied for table users\n    at Connection.parseE (/Users/shubhamgupta/Desktop/peer_rating/employee_rating_system/node_modules/pg/lib/connection.js:614:13)\n    at Connection.parseMessage (/Users/shubhamgupta/Desktop/peer_rating/employee_rating_system/node_modules/pg/lib/connection.js:413:19)\n    at Socket.<anonymous> (/Users/shubhamgupta/Desktop/peer_rating/employee_rating_system/node_modules/pg/lib/connection.js:129:22)\n    at Socket.emit (events.js:189:13)\n    at addChunk (_stream_readable.js:284:12)\n    at readableAddChunk (_stream_readable.js:265:11)\n    at Socket.Readable.push (_stream_readable.js:220:10)\n    at TCP.onStreamRead [as onread] (internal/stream_base_commons.js:94:17)"
+    }
+  ],
+  "data": {
+    "allUsers": null
+  }
+}
+
+
+ 
+You can see the permission error postgres throw for the anonymous role (by default in case of not JWT set ot header)
+
+Now lets see the same Query with setting the admin JWT in request header
+
+Query 
+
+{
+  allUsers {
+    edges {
+      node {
+        id
+        email
+        name
+        password
+        userType
+      }
+    }
+  }
+}
+
+Response: 
+
+{
+  "data": {
+    "allUsers": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "email": "shubham@decabits.com",
+            "name": "Shubham",
+            "password": "1234567",
+            "userType": "employee"
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "email": "sahil@decabits.com",
+            "name": "Sahil",
+            "password": "abcdefg",
+            "userType": "admin"
+          }
+        },
+        {
+          "node": {
+            "id": 3,
+            "email": "harnoor@decabits.com",
+            "name": "harnoor",
+            "password": "aswe345",
+            "userType": "employee"
+          }
+        },
+        {
+          "node": {
+            "id": 5,
+            "email": "shubham.gupta@zyloto.com",
+            "name": "shubhamzyloto",
+            "password": "$2a$08$YHRpKsUgmi8KFsoNoswj6ex8BPOrsg1XQ4XnKK3tfqyI.VZH06w1G",
+            "userType": "admin"
+          }
+        },
+        {
+          "node": {
+            "id": 6,
+            "email": "shubhamgupta11727@gmail.com",
+            "name": "shubham117",
+            "password": "$2a$08$mwr0LmMXNDeV0JrDpr13wuQZ5J.5n0M8l7lrEBuoWLSKO/Qyq26ki",
+            "userType": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
+
+Query:
+
+{
+  allRatings {
+    edges {
+      node {
+        id
+        feedback
+        month
+        rating
+        year
+        userPeerId
+      }
+    }
+  }
+}
+
+
+Response:
+
+{
+  "data": {
+    "allRatings": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "feedback": "Coolest Boss ever, if you just ignore the PJs",
+            "month": 4,
+            "rating": 8,
+            "year": 2019,
+            "userPeerId": 1
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "feedback": "Code aggressively , just ignore his temper",
+            "month": 5,
+            "rating": 7,
+            "year": 2019,
+            "userPeerId": 2
+          }
+        },
+        {
+          "node": {
+            "id": 3,
+            "feedback": "Nicest Hr ever, just ignore all the falling and loud laugh",
+            "month": 8,
+            "rating": 9,
+            "year": 2019,
+            "userPeerId": 3
+          }
+        }
+      ]
+    }
+  }
+}
+ 
+Similarly you can see the access control for employee role. you‘ll be able to query the users and user_peer table but won’t  be able to make any mutation because of only read rights given at db level and for rating employee could do all sort of Read/Write as of now. 
+
+Now let’s see how far are we from our initial actuals requirements.
+
+1. Currently Employees can query the entire users table , we need to restrict the employee role to only be able to query his peers. I.e user in user_peerstable corresponding to his ids.
+2. Similarly employee should be only able to fetch rows in user_peer table for his peer.
+3 Employee role for rating table should be able to Read/Write ratings for his peers and not all users.
+4. Ahem! We’re still able to see the raw password in user query., employee or as a matter of fact no one should be able to see those. Let’s take care of that in a out of the of the box approach and not restrict it on db level(although it could be very much doable by column level security policy , but lets handle this problem at postgraphile layer:)  later).
+Currently lets’ Write some last bit of SQL to set up row level security policies.
+But before that we would need a method for postgres to identlfy the userId for the particular Read/Write operation in context to restrict row level , lets see how.
+
+
+The content of the JWT token is stored in jwt.claims in the postgres ecosystem . The user id is stored accordingly in jwt.claims.user_id
+We can create a postgres function to fetch the user_id from the  jwt.claims .
+CREATE FUNCTION current_user_id() RETURNS INTEGER AS $$
+-- The content of the JWT token is stored in jwt.claims
+-- The user id is stored accordingly in jwt.claims.user_id
+SELECT NULLIF(current_setting('jwt.claims.user_id', TRUE), '')::INTEGER;
+$$ LANGUAGE SQL STABLE;
+
+GRANT EXECUTE ON FUNCTION current_user_id() TO anonymous;
+GRANT EXECUTE ON FUNCTION current_user_id() TO employee;
+GRANT EXECUTE ON FUNCTION current_user_id() TO admin;
+
+
+As soon as you’ll execute these statement, you’ll find a new query sitting in your graphIQl playground namely currentUserID , which would simply fetch the user if from your JWT and return, although we’re going to use this function internally to postgres but its amazing to see how beautifully postgraphile sync up with any development within postgres schema.
+Now Let’s see some SQL to Grant/Restrict row level security for roles using the current_user_id :
+ 
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_all ON users TO admin USING (true) WITH CHECK (true);
+
+CREATE POLICY own_user ON users TO employee
+    USING (id = current_user_id())
+
+CREATE POLICY own_peer ON users TO employee
+    USING (id IN (SELECT peer_id FROM user_peers WHERE user_peers.user_id = current_user_id()))
+
+ALTER TABLE user_peers ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_all ON user_peers TO admin USING (true) WITH CHECK (true);
+
+CREATE POLICY own_user_peers ON user_peers TO employee
+    USING (user_id = current_user_id())
+
+ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_all ON ratings TO admin USING (true) WITH CHECK (true);
+
+CREATE POLICY peer_ratings ON ratings TO employee
+    USING (user_peer_id IN (SELECT id FROM user_peers WHERE user_peers.user_id = current_user_id()))
+    WITH CHECK (user_peer_id IN (SELECT id FROM user_peers WHERE user_peers.user_id = current_user_id()))
+
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE user_peers_id_seq TO admin;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE ratings_id_seq TO admin;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE ratings_id_seq TO employee;
+
+
+ 
+Well , that's a lot of PLPGSQL, let's talk about what we’ve fundamentally done here, we have GRANT access to a role with certain conditions on user_id for a row, all the rows fulfilling these conditions would be accessible to that role.
+For role employees we have restricted access to the user table for the rows which have used_id equal to that of his peers and his own. 
+Similarly for the rating table we have restricted the scope of access for a user to limited to his peers based on user_peer _id .
+And like always admin simply have been GRANT  all the privileges.
+
+If you Query the users table for an employee token , you’ll only get his peers and his own data in allUser Query. You can verify all these access restrictions on your own in graphiQL playground.
+ 
+Now let’s talk about our last concern. The visible PASSWORD!, like i said above we can very much restrict access to password column at postgres level , but lets hanlde that at postgraphile level, what we’re gonna do is mask the value for password to show a generic message that says invalid access for password. How we’re gonna do this is by using a postgraphile plugin that let’s you wrap the graphQL resolver for a graphQL type with your custom resolver function, lets see how more of code.
+ 
+app.use(
+  postgraphile("shubham:///PeerRatings",
+    "public",
+    {
+      watchPg: true,
+      graphiql: true,
+      enhanceGraphiql: true,
+      dynamicJson: true,
+      jwtPgTypeIdentifier: 'public.jwt_token',
+      jwtSecret: 'ABHD4537BS',
+      pgDefaultRole: 'anonymous',
+      exportJsonSchemaPath: '../example.js',
+      showErrorStack: true,
+      appendPlugins: [
+        makeWrapResolversPlugin({
+          User: {
+            password: {
+              async resolve(resolver, user, args, context, _resolveInfo) {
+                const password = await resolver();
+                return "Not Allowed to View Password"
+              },
+            },
+          },
+        }),
+      ],
+
+      additionalGraphQLContextFromRequest(req) {
+        let res = req.res
+        return {
+          res
+        };
+      }
+    }
+  )
+);
+
+
+
+Have a look at makeWrapResolverPlugin which take an object specifying the GraphQL type and it field for which resolver need to be wrapper and provide you a resolve function which have access to actual postgraphile resolver function along with user, context, args and _resolverInfo object. The return value is the actual data returned for that GraphQL field.  
+
+You will also see the aditionalGraphQLContextFromRequest  method passed to the postgraphile config object , don't get confused with it, the only purpose it serves is to populate the GraphQl context object with additional properties for our convenience. Here I have just extracted out the response object from the request object and passed  it directly to the resolver context for me to have it handy there.  
+
+Now let’s have a look at the allUser query for admin role:
+
+
+
+Query:
+
+{
+  allUsers {
+    edges {
+      node {
+        id
+        email
+        name
+        password
+        userType
+      }
+    }
+  }
+}
+
+
+Response:
+
+{
+  "data": {
+    "allUsers": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "email": "shubham@decabits.com",
+            "name": "Shubham",
+            "password": "Not Allowed to View Password",
+            "userType": "employee"
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "email": "sahil@decabits.com",
+            "name": "Sahil",
+            "password": "Not Allowed to View Password",
+            "userType": "admin"
+          }
+        },
+        {
+          "node": {
+            "id": 3,
+            "email": "harnoor@decabits.com",
+            "name": "harnoor",
+            "password": "Not Allowed to View Password",
+            "userType": "employee"
+          }
+        },
+        {
+          "node": {
+            "id": 5,
+            "email": "shubham.gupta@zyloto.com",
+            "name": "shubhamzyloto",
+            "password": "Not Allowed to View Password",
+            "userType": "admin"
+          }
+        },
+        {
+          "node": {
+            "id": 6,
+            "email": "shubhamgupta11727@gmail.com",
+            "name": "shubham117",
+            "password": "Not Allowed to View Password",
+            "userType": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+
+See the password field is finally resolved with the masked value we returned inside our plugin. This plugin could be used for a million of use cases to manipulate the actual resolved value from the database, see the resolver funciton inside the resolve wraper gives you the actual resolved value for you to manipulate at your end as per business logic.
+
+With this last piece we’re done with this post , i know this is a pretty long read and if you're still here with me at this point , Hurray! today you’ve learnt a pretty awesome way to automate your entire CRUD interface with a very less yet strong set of SQL/PLPGSQL statements.
+
+Conclusion
+
+Postgres is awesome and so is postgraphile. Postgraphile give you a variety of features and we’ve just seen very less of  what it actually can do. I would recommend you to go through their documentation and read more about it in case you’re interested how it leverages the power of postgres extensive features and gives you a real time updated GraphQL API interface which keeps updating every time you make any change to the underlying postgres schema. Stay connected in out next blog we’ll see how we can use feather.js to automate our backend side logic and create a very extensive prototype in matter of 15 minute. Till then happy coding, happy learning. Bye Bye…..     
+ 
+ 
+ 
+ 
+ 
